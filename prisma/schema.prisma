@@ -1,0 +1,245 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                     String          @id
+  username               String          @unique
+  avatar                 String?
+  cover                  String?
+  name                   String?
+  surname                String?
+  description            String?
+  city                   String?
+  school                 String?
+  work                   String?
+  website                String?
+  createdAt              DateTime        @default(now())
+  posts                  Post[]
+  comment                Comment[]
+  like                   Like[]
+  followers              Follower[]      @relation("UserFollowers")
+  followings             Follower[]      @relation("UserFollowings")
+  followRequestsSent     FollowRequest[] @relation("FollowRequestsSent")
+  followRequestsReceived FollowRequest[] @relation("FollowRequestsReceived")
+  blocks                 Block[]         @relation("BlocksSent")
+  blockedBy              Block[]         @relation("BlocksReceived")
+  stories                Story[]
+  notifications          Notification[]  @relation("UserNotifications")
+  triggeredNotifications Notification[]  @relation("NotificationsTriggered")
+  
+  // Relations pour la messagerie
+  conversationParticipants ConversationParticipant[]
+  sentMessages           Message[]       @relation("UserSentMessages")
+  deletedConversations   DeletedConversation[]
+  isOnline   Boolean   @default(false)
+  lastSeen   DateTime? @updatedAt
+  messageReads   MessageRead[]
+}
+
+model Post {
+  id            Int            @id @default(autoincrement())
+  desc          String         @db.VarChar(10000)
+  img           String?
+  createdAt     DateTime       @default(now())
+  updateAt      DateTime       @updatedAt
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        String
+  comments      Comment[]
+  likes         Like[]
+  notifications Notification[]
+}
+
+model Comment {
+  id            Int            @id @default(autoincrement())
+  desc          String         @db.Text // ← Support jusqu'à 65,535 caractères
+  createdAt     DateTime       @default(now())
+  updateAt      DateTime       @updatedAt
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        String
+  post          Post           @relation(fields: [postId], references: [id], onDelete: Cascade)
+  postId        Int
+  likes         Like[]
+  // Nouveau système de réponses
+  parentId      Int? // ID du commentaire parent (null pour les commentaires principaux)
+  parent        Comment?       @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies       Comment[]      @relation("CommentReplies")
+  notifications Notification[]
+}
+
+model Like {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  post      Post?    @relation(fields: [postId], references: [id], onDelete: Cascade)
+  postId    Int?
+  Comment   Comment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  commentId Int?
+}
+
+model Follower {
+  id          Int      @id @default(autoincrement())
+  createdAt   DateTime @default(now())
+  follower    User     @relation("UserFollowers", fields: [followerId], references: [id], onDelete: Cascade)
+  followerId  String
+  following   User     @relation("UserFollowings", fields: [followingId], references: [id], onDelete: Cascade)
+  followingId String
+}
+
+model FollowRequest {
+  id         Int      @id @default(autoincrement())
+  createdAt  DateTime @default(now())
+  sender     User     @relation("FollowRequestsSent", fields: [senderId], references: [id], onDelete: Cascade)
+  senderId   String
+  receiver   User     @relation("FollowRequestsReceived", fields: [receiverId], references: [id], onDelete: Cascade)
+  receiverId String
+
+  @@unique([senderId, receiverId])
+}
+
+model Block {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+  blocker   User     @relation("BlocksSent", fields: [blockerId], references: [id], onDelete: Cascade)
+  blockerId String
+  blocked   User     @relation("BlocksReceived", fields: [blockedId], references: [id], onDelete: Cascade)
+  blockedId String
+
+  @@unique([blockerId, blockedId])
+}
+
+model Story {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  img       String
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  type      NotificationType
+  message   String
+  read      Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  // Utilisateur qui reçoit la notification
+  userId String
+  user   User   @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
+
+  // Utilisateur qui a déclenché la notification (optionnel)
+  triggeredById String?
+  triggeredBy   User?   @relation("NotificationsTriggered", fields: [triggeredById], references: [id], onDelete: Cascade)
+
+  // Références vers les entités liées (optionnel)
+  postId Int?
+  post   Post? @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  commentId Int?
+  comment   Comment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read])
+  @@index([createdAt])
+}
+
+enum NotificationType {
+  LIKE
+  COMMENT
+  FOLLOW
+  FOLLOW_REQUEST
+  MENTION
+}
+
+model Conversation {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Participants de la conversation
+  participants ConversationParticipant[]
+  messages     Message[]
+  deletedConversations DeletedConversation[]
+
+  // Dernière activité pour le tri
+  lastMessageAt DateTime @default(now())
+}
+
+model ConversationParticipant {
+  id             String @id @default(cuid())
+  conversationId String
+  userId         String
+  joinedAt       DateTime @default(now())
+  
+  // Dernière fois que l'utilisateur a lu la conversation
+  lastReadAt     DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+}
+
+model Message {
+  id             String   @id @default(cuid())
+  content        String   @db.Text
+  createdAt      DateTime @default(now())
+  
+  // Type de message (text, image, etc.)
+  type           MessageType @default(TEXT)
+  
+  // URL pour les images/vidéos
+  mediaUrl       String?
+
+  conversationId String
+  senderId       String
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User         @relation("UserSentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+  reads          MessageRead[]
+}
+
+model DeletedConversation {
+  id             String       @id @default(cuid())
+  userId         String
+  conversationId String
+  deletedAt      DateTime     @default(now())
+  
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, conversationId])
+  @@map("deleted_conversations")
+}
+model MessageRead {
+  id        String   @id @default(cuid())
+  messageId String
+  userId    String
+  readAt    DateTime @default(now())
+  
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([messageId, userId])
+  @@map("message_reads")
+}
+enum MessageType {
+  TEXT
+  IMAGE
+  VIDEO
+}

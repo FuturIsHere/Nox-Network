@@ -34,3 +34,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# clerk configuration (can include secrets)
+/.clerk/
+
+# Uploads directory - fichiers uploadés localement
+/public/uploads/images/
+/public/uploads/videos/
+/public/uploads/temp/
